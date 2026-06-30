@@ -6,10 +6,8 @@ def initialize_database():
     conn = sqlite3.connect(DATABASE_NAME)
     cursor = conn.cursor()
     
-    # Enable foreign keys for cascading deletes
     cursor.execute("PRAGMA foreign_keys = ON;")
     
-    # 1. Profiles Table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS business_profiles (
             profile_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -17,7 +15,6 @@ def initialize_database():
         )
     """)
     
-    # 2. Accounts Table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS accounts (
             account_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -29,7 +26,6 @@ def initialize_database():
         )
     """)
     
-    # 3. Spreadsheet Grid Storage Table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS grid_items (
             item_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,7 +38,6 @@ def initialize_database():
         )
     """)
 
-    # 4. Journal Headers Table (Tracks the date and description of transactions)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS journal_entries (
             journal_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,7 +48,6 @@ def initialize_database():
         )
     """)
 
-    # 5. Ledger Lines Table (Tracks individual debits and credits for each account)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS ledger_entries (
             entry_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,7 +59,6 @@ def initialize_database():
         )
     """)
 
-    # 6. Accounts Receivable / Invoice Tracking Table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS invoices (
             invoice_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -78,7 +71,6 @@ def initialize_database():
         )
     """)
     
-    # Seed default profile if empty
     cursor.execute("SELECT COUNT(*) FROM business_profiles")
     if cursor.fetchone()[0] == 0:
         cursor.execute("INSERT INTO business_profiles (name) VALUES ('Default Corporation')")
@@ -101,19 +93,15 @@ def reset_and_reinitialize_database():
     conn = sqlite3.connect(DATABASE_NAME)
     cursor = conn.cursor()
     
-    # Disable foreign keys temporarily so we can drop tables cleanly without blockages
     cursor.execute("PRAGMA foreign_keys = OFF;")
     
-    # Fetch all custom table names inside the engine database
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
     tables = [row[0] for row in cursor.fetchall()]
     
-    # Nuke every table
     for table in tables:
         cursor.execute(f"DROP TABLE IF EXISTS {table};")
         
     conn.commit()
     conn.close()
     
-    # Reinitialize empty production-ready structures instantly
     initialize_database()
