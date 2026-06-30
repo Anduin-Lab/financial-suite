@@ -3,9 +3,8 @@ import customtkinter as ctk
 class LogTransactionTab(ctk.CTkFrame):
     def __init__(self, master, master_app):
         super().__init__(master, fg_color="transparent")
-        self.master_app = master_app  # Reference to main core app
+        self.master_app = master_app  
         
-        # Grid frame setup
         self.entry_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.entry_frame.pack(pady=20, padx=20, fill="both")
         
@@ -25,7 +24,7 @@ class LogTransactionTab(ctk.CTkFrame):
         self.amount_entry = ctk.CTkEntry(self.entry_frame, placeholder_text="0.00", width=120)
         self.amount_entry.grid(row=3, column=1, padx=10, pady=10, sticky="w")
         
-        self.status_label = ctk.CTkLabel(self, text="Ready to write securely.", text_color="gray")
+        self.status_label = ctk.CTkLabel(self, text="Ready to save transaction.", text_color="gray")
         self.status_label.pack(pady=10)
         
         ctk.CTkButton(self, text="Commit Entry", command=self.master_app.execute_entry).pack(pady=5)
