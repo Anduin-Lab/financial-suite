@@ -8,176 +8,122 @@ class InteractiveSheetTab(ctk.CTkFrame):
         super().__init__(master, fg_color="transparent")
         self.master_app = master_app
         
-        # Grid Configuration Rules
         self.total_rows = 15
-        self.widgets = {}  # Format: {row -> {"desc": widget, "qty": widget, ...}}
+        self.widgets = {}  
 
-        # Control Panel Bar
         control_bar = ctk.CTkFrame(self, fg_color="transparent")
         control_bar.pack(fill="x", padx=20, pady=5)
         
-        ctk.CTkLabel(control_bar, text="📊 Live Ledger Spreadsheet Engine", font=ctk.CTkFont(weight="bold", size=14)).pack(side="left")
-        ctk.CTkButton(control_bar, text="💾 Save Changes", fg_color="#1f538d", hover_color="#14375e", width=120, command=self.save_grid_to_db).pack(side="right", padx=5)
-        ctk.CTkButton(control_bar, text="🔄 Recalculate Sheet", fg_color="#3a3a3a", hover_color="#2b2b2b", width=140, command=self.load_grid_from_db).pack(side="right", padx=5)
+        ctk.CTkLabel(control_bar, text="Ledger Spreadsheet Workspace", font=ctk.CTkFont(weight="bold", size=14)).pack(side="left")
+        ctk.CTkButton(control_bar, text="Save Changes", fg_color="#1f538d", hover_color="#14375e", width=120, command=self.save_grid_to_db).pack(side="right", padx=5)
+        ctk.CTkButton(control_bar, text="Recalculate Sheet", fg_color="#3a3a3a", hover_color="#2b2b2b", width=140, command=self.load_grid_from_db).pack(side="right", padx=5)
 
-        # Scrollable Sheet Workspace Canvas
         self.sheet_container = ctk.CTkScrollableFrame(self)
-        self.sheet_container.pack(fill="both", expand=True, padx=20, pady=10)
+        self.sheet_container.pack(fill="both", expand=True, padx=20, pady=5)
 
-        # Draw Table Headers
-        headers = ["Row", "Description / Account Link", "Quantity", "Rate ($)", "Line Total ($)"]
-        for col_idx, text in enumerate(headers):
-            ctk.CTkLabel(self.sheet_container, text=text, font=ctk.CTkFont(weight="bold")).grid(row=0, column=col_idx, padx=10, pady=5, sticky="ew")
-
-        # Draw Input Matrix Rows
-        for r in range(1, self.total_rows + 1):
-            ctk.CTkLabel(self.sheet_container, text=str(r), text_color="gray").grid(row=r, column=0, padx=10, pady=2)
-
-            desc = ctk.CTkEntry(self.sheet_container, width=280, placeholder_text="Freeform entry...")
-            qty = ctk.CTkEntry(self.sheet_container, width=100, placeholder_text="0", justify="right")
-            rate = ctk.CTkEntry(self.sheet_container, width=120, placeholder_text="0.00", justify="right")
-            total_lbl = ctk.CTkLabel(self.sheet_container, text="$0.00", font=ctk.CTkFont(family="Courier", weight="bold"))
-
-            desc.grid(row=r, column=1, padx=5, pady=2)
-            qty.grid(row=r, column=2, padx=5, pady=2)
-            rate.grid(row=r, column=3, padx=5, pady=2)
-            total_lbl.grid(row=r, column=4, padx=15, pady=2, sticky="e")
-
-            self.widgets[r] = {"desc": desc, "qty": qty, "rate": rate, "total": total_lbl}
-
-            # --- EXCEL KEYBOARD BINDINGS ---
-            desc.bind("<Key>", lambda e, row=r: self.navigate_keyboard(e, row, "desc"))
-            qty.bind("<Key>", lambda e, row=r: self.navigate_keyboard(e, row, "qty"))
-            rate.bind("<Key>", lambda e, row=r: self.navigate_keyboard(e, row, "rate"))
-
-            # --- FORMULA EVALUATION TRIGGERS ---
-            qty.bind("<FocusOut>", lambda e, row=r: self.evaluate_and_update_row(row))
-            rate.bind("<FocusOut>", lambda e, row=r: self.evaluate_and_update_row(row))
-
-        # --- GRAND TOTAL FOOTER BLOCK ---
-        self.total_row_frame = ctk.CTkFrame(self.sheet_container, fg_color="#1a1a1a", height=35, corner_radius=4)
-        self.total_row_frame.grid(row=self.total_rows + 1, column=0, columnspan=5, padx=5, pady=15, sticky="ew")
+        headers = ["Row", "Item / Expense Description", "Quantity", "Unit Rate ($)", "Line Total ($)"]
+        widths = [50, 320, 100, 120, 140]
         
-        self.grand_total_label = ctk.CTkLabel(
-            self.total_row_frame, 
-            text="Grand Sheet Total: $0.00", 
-            font=ctk.CTkFont(weight="bold", size=13),
-            text_color="#228B22"
-        )
-        self.grand_total_label.pack(side="right", padx=20, pady=5)
+        for col_idx, text in enumerate(headers):
+            lbl = ctk.CTkLabel(self.sheet_container, text=text, font=ctk.CTkFont(weight="bold"), width=widths[col_idx], anchor="w" if col_idx < 4 else "e")
+            lbl.grid(row=0, column=col_idx, padx=5, pady=5, sticky="ew")
+
+        for r in range(1, self.total_rows + 1):
+            ctk.CTkLabel(self.sheet_container, text=str(r), width=50, anchor="center").grid(row=r, column=0, padx=5, pady=2)
+            
+            desc_field = ctk.CTkEntry(self.sheet_container, placeholder_text="Enter description...", width=320)
+            desc_field.grid(row=r, column=1, padx=5, pady=2, sticky="w")
+            
+            qty_field = ctk.CTkEntry(self.sheet_container, placeholder_text="0", width=100)
+            qty_field.grid(row=r, column=2, padx=5, pady=2, sticky="w")
+            
+            rate_field = ctk.CTkEntry(self.sheet_container, placeholder_text="0.00", width=120)
+            rate_field.grid(row=r, column=3, padx=5, pady=2, sticky="w")
+            
+            total_label = ctk.CTkLabel(self.sheet_container, text="$0.00", font=ctk.CTkFont(family="Courier"), width=140, anchor="e")
+            total_label.grid(row=r, column=4, padx=5, pady=2, sticky="e")
+            
+            qty_field.bind("<KeyRelease>", lambda e, r_idx=r: self.compute_row_total(r_idx))
+            rate_field.bind("<KeyRelease>", lambda e, r_idx=r: self.compute_row_total(r_idx))
+            
+            self.widgets[r] = {
+                "desc": desc_field,
+                "qty": qty_field,
+                "rate": rate_field,
+                "total": total_label
+            }
+
+        self.summary_strip = ctk.CTkFrame(self, fg_color="#1e1e1e", height=35, corner_radius=6)
+        self.summary_strip.pack(fill="x", side="bottom", pady=10, padx=20)
+        
+        self.grand_total_lbl = ctk.CTkLabel(self.summary_strip, text="Grand Aggregate Value: $0.00", font=ctk.CTkFont(weight="bold", size=13), text_color="#40ff40")
+        self.grand_total_lbl.pack(side="right", padx=20, pady=5)
 
         self.load_grid_from_db()
 
-    def evaluate_expression(self, text):
-        cleaned = text.strip()
-        if not cleaned:
-            return 0.0
-        if cleaned.startswith("="):
-            cleaned = cleaned[1:]
-        if not all(char in "0123456789+-*/.()" for char in cleaned):
-            try: return float(cleaned)
-            except ValueError: return 0.0
+    def compute_row_total(self, r):
         try:
-            result = eval(cleaned, {"__builtins__": None}, {})
-            return float(result)
-        except Exception:
-            return 0.0
+            qty_val = self.widgets[r]["qty"].get().strip()
+            rate_val = self.widgets[r]["rate"].get().strip()
+            
+            qty = float(qty_val) if qty_val else 0.0
+            rate = float(rate_val) if rate_val else 0.0
+            
+            line_total = qty * rate
+            self.widgets[r]["total"].configure(text=f"${line_total:,.2f}")
+        except ValueError:
+            self.widgets[r]["total"].configure(text="$0.00")
+            
+        self.compute_grand_total()
 
-    def calculate_grand_total(self):
-        """Scans all displayed line items and aggregates the sheet matrix total"""
+    def compute_grand_total(self):
         grand_total = 0.0
         for r in range(1, self.total_rows + 1):
-            qty_val = self.evaluate_expression(self.widgets[r]["qty"].get())
-            rate_val = self.evaluate_expression(self.widgets[r]["rate"].get())
-            grand_total += (qty_val * rate_val)
-        self.grand_total_label.configure(text=f"Grand Sheet Total: ${grand_total:,.2f}")
-
-    def evaluate_and_update_row(self, row):
-        qty_box = self.widgets[row]["qty"]
-        rate_box = self.widgets[row]["rate"]
-
-        qty_val = self.evaluate_expression(qty_box.get())
-        rate_val = self.evaluate_expression(rate_box.get())
-
-        if qty_box.get().strip().startswith("="):
-            qty_box.delete(0, 'end')
-            qty_box.insert(0, str(int(qty_val) if qty_val.is_integer() else qty_val))
-            
-        if rate_box.get().strip().startswith("="):
-            rate_box.delete(0, 'end')
-            rate_box.insert(0, f"{rate_val:.2f}")
-
-        line_total = qty_val * rate_val
-        self.widgets[row]["total"].configure(text=f"${line_total:,.2f}")
-        
-        # Recalculate whole sheet aggregate on any value edit event
-        self.calculate_grand_total()
-
-    def navigate_keyboard(self, event, row, field):
-        if event.keysym in ["Return", "Down", "Up", "Tab", "Right", "Left"]:
-            self.evaluate_and_update_row(row)
-
-        fields_order = ["desc", "qty", "rate"]
-        col_idx = fields_order.index(field)
-        
-        target_row = row
-        target_field = field
-
-        if event.keysym in ["Return", "Down"]:
-            if row < self.total_rows:
-                target_row = row + 1
-        elif event.keysym == "Up":
-            if row > 1:
-                target_row = row - 1
-        elif event.keysym in ["Tab", "Right"]:
-            if col_idx < len(fields_order) - 1:
-                target_field = fields_order[col_idx + 1]
-                if event.keysym == "Tab":
-                    self.widgets[target_row][target_field].focus()
-                    return "break"
-            elif row < self.total_rows:
-                target_row = row + 1
-                target_field = fields_order[0]
-        elif event.keysym == "Left":
-            if col_idx > 0:
-                target_field = fields_order[col_idx - 1]
-
-        if target_row != row or target_field != field:
-            self.widgets[target_row][target_field].focus()
-            if event.keysym == "Return":
-                return "break"
+            txt = self.widgets[r]["total"].cget("text")
+            try:
+                val = float(txt.replace("$", "").replace(",", ""))
+                grand_total += val
+            except ValueError:
+                pass
+        self.grand_total_lbl.configure(text=f"Grand Aggregate Value: ${grand_total:,.2f}")
 
     def save_grid_to_db(self):
+        if self.master_app.is_simulation_mode:
+            print("Spreadsheet saving skipped while in simulation mode.")
+            return
+
         pid = self.master_app.current_profile_id
         conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
+        
         try:
             cursor.execute("DELETE FROM grid_items WHERE profile_id = ?", (pid,))
+            
+            payload = []
             for r in range(1, self.total_rows + 1):
-                desc_text = self.widgets[r]["desc"].get().strip()
-                qty_raw = self.widgets[r]["qty"].get().strip()
-                rate_raw = self.widgets[r]["rate"].get().strip()
-
-                if desc_text or qty_raw or rate_raw:
-                    qty_val = self.evaluate_expression(qty_raw)
-                    rate_val = self.evaluate_expression(rate_raw)
-                    cursor.execute("""
-                        INSERT INTO grid_items (profile_id, row_index, description, quantity, rate)
-                        VALUES (?, ?, ?, ?, ?)
-                    """, (pid, r, desc_text, qty_val, rate_val))
+                desc = self.widgets[r]["desc"].get().strip()
+                qty_str = self.widgets[r]["qty"].get().strip()
+                rate_str = self.widgets[r]["rate"].get().strip()
+                
+                if desc or qty_str or rate_str:
+                    qty = float(qty_str) if qty_str else 0.0
+                    rate = float(rate_str) if rate_str else 0.0
+                    payload.append((pid, r, desc, qty, rate))
+                    
+            if payload:
+                cursor.executemany("INSERT INTO grid_items (profile_id, row_index, description, quantity, rate) VALUES (?,?,?,?,?)", payload)
             conn.commit()
         except Exception as e:
-            print(f"Spreadsheet save error: {e}")
+            print(f"Spreadsheet persistence error: {e}")
         finally:
             conn.close()
-        self.load_grid_from_db()
 
     def load_grid_from_db(self):
         pid = self.master_app.current_profile_id
         
         for r in range(1, self.total_rows + 1):
             self.widgets[r]["desc"].delete(0, 'end')
-            self.widgets[r]["desc"]._activate_placeholder()  # <-- FIXED: Using proper customtkinter attribute token
+            self.widgets[r]["desc"]._activate_placeholder()  
             
             self.widgets[r]["qty"].delete(0, 'end')
             self.widgets[r]["qty"]._activate_placeholder()
@@ -204,5 +150,4 @@ class InteractiveSheetTab(ctk.CTkFrame):
         finally:
             conn.close()
             
-        # Run a global calculation check right after database numbers pour in
-        self.calculate_grand_total()
+        self.compute_grand_total()
