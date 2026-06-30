@@ -4,7 +4,6 @@ import pandas as pd
 from database import DATABASE_NAME, initialize_database
 import engine
 
-# Import our modular custom UI panels
 from tab_entry import LogTransactionTab
 from tab_sheet import InteractiveSheetTab
 from tab_reports import ReportsDashboardTab
@@ -20,65 +19,61 @@ class ModernAccountingApp(ctk.CTk):
         super().__init__()
         initialize_database()
         
-        self.title("B.O.Y.O.U.N.G. Financial Suite")
-        self.geometry("950x700")
+        self.title("Financial Suite")
+        self.geometry("950x740")
         self.current_profile_id = 1
         
-        # --- PATH 3: CENTRAL HIGH-SPEED MEMORY CACHE STORE ---
-        self._cache = {
-            "ledger": None,
-            "invoices": None
-        }
+        self.is_simulation_mode = False
+        self._cache = {"ledger": None, "invoices": None}
+        self._sim_cache = {"ledger": None, "invoices": None}
         
-        # --- TOP HEADER BAR ---
         self.top_bar = ctk.CTkFrame(self, fg_color="transparent")
-        self.top_bar.pack(pady=10, padx=20, fill="x")
+        self.top_bar.pack(pady=(10, 5), padx=20, fill="x")
         
-        ctk.CTkLabel(self.top_bar, text="Portfolio Context:", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=5)
-        self.profile_menu = ctk.CTkOptionMenu(self.top_bar, values=self.get_profile_names(), command=self.switch_profile, width=200)
+        ctk.CTkLabel(self.top_bar, text="Company Profile:", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=5)
+        self.profile_menu = ctk.CTkOptionMenu(self.top_bar, values=self.get_profile_names(), command=self.switch_profile, width=180)
         self.profile_menu.pack(side="left", padx=10)
         
-        # Sync configuration state rules
-        self.sync_accounts()
+        self.sim_bar = ctk.CTkFrame(self, fg_color="#1e1e1e", border_color="#3a3a3a", border_width=1, height=45)
+        self.sim_bar.pack(pady=5, padx=20, fill="x")
         
-        # Prime the cache memory structures for the initial profile context
+        self.sim_status_lbl = ctk.CTkLabel(self.sim_bar, text="LIVE MODE (Saving to Database)", font=ctk.CTkFont(weight="bold", size=12), text_color="#40ff40")
+        self.sim_status_lbl.pack(side="left", padx=15, pady=8)
+        
+        self.sim_btn = ctk.CTkButton(self.sim_bar, text="Enter Simulation Mode", fg_color="#D2691E", hover_color="#A0522D", width=200, command=self.toggle_simulation_mode)
+        self.sim_btn.pack(side="right", padx=15, pady=8)
+        
+        self.sync_accounts()
         self.invalidate_and_prime_cache()
         
-        # --- TAB CONTAINER HUB ---
         self.tabs = ctk.CTkTabview(self)
-        self.tabs.pack(padx=20, pady=10, fill="both", expand=True)
+        self.tabs.pack(padx=20, pady=5, fill="both", expand=True)
         
-        # Mount the specialized external tabs directly onto container frame elements
-        self.tab1 = LogTransactionTab(self.tabs.add("📝 Log Transaction"), self)
+        self.tab1 = LogTransactionTab(self.tabs.add("Log Transaction"), self)
         self.tab1.pack(fill="both", expand=True)
         
-        self.tab2 = InteractiveSheetTab(self.tabs.add("📊 Interactive Sheet"), self)
+        self.tab2 = InteractiveSheetTab(self.tabs.add("Interactive Sheet"), self)
         self.tab2.pack(fill="both", expand=True)
         
-        self.tab3 = ReportsDashboardTab(self.tabs.add("📈 View Dashboard"), self)
+        self.tab3 = ReportsDashboardTab(self.tabs.add("View Dashboard"), self)
         self.tab3.pack(fill="both", expand=True)
         
-        self.tab4 = SystemSettingsTab(self.tabs.add("⚙️ Manage System"), self)
+        self.tab4 = SystemSettingsTab(self.tabs.add("Manage System"), self)
         self.tab4.pack(fill="both", expand=True)
 
-        self.tab5 = GeneralLedgerTab(self.tabs.add("📜 View Ledger"), self)
+        self.tab5 = GeneralLedgerTab(self.tabs.add("View Ledger"), self)
         self.tab5.pack(fill="both", expand=True)
 
-        self.tab6 = InvoiceTrackerTab(self.tabs.add("🧾 Track Invoices"), self)
+        self.tab6 = InvoiceTrackerTab(self.tabs.add("Track Invoices"), self)
         self.tab6.pack(fill="both", expand=True)
 
-        # --- MOUNT THE B.O.Y.O.U.N.G. RESET ENGINE PANEL ---
-        self.mount_nuke_control()
-
+        self.mount_reset_control()
         self.refresh_reports()
 
-    # --- PATH 3: INTELLIGENT CACHE MANAGEMENT ENGINE ---
     def invalidate_and_prime_cache(self):
-        """Pre-fetches data tables completely into fast system memory structures"""
         conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
         try:
-            # 1. Cache the Ledger Query
             cursor.execute("PRAGMA table_info(journal_entries);")
             columns = [col[1] for col in cursor.fetchall()]
             date_col = "date" if "date" in columns else ("transaction_date" if "transaction_date" in columns else columns[2])
@@ -92,89 +87,46 @@ class ModernAccountingApp(ctk.CTk):
                 ORDER BY j.journal_id DESC, le.amount DESC
             """
             self._cache["ledger"] = pd.read_sql_query(ledger_query, conn, params=(self.current_profile_id,))
-            
-            # 2. Cache the Invoice Pipeline Query
             invoice_query = "SELECT invoice_id, customer_name, amount, due_date, status FROM invoices WHERE profile_id = ?"
             self._cache["invoices"] = pd.read_sql_query(invoice_query, conn, params=(self.current_profile_id,))
-            
         except Exception as e:
-            print(f"🎯 Cache Pre-fetch Failure: {e}")
+            print(f"Cache Error: {e}")
         finally:
             conn.close()
 
     def get_cached_data(self, key):
-        """Returns hot memory data instantly; if cache dropped, re-fetches gracefully"""
+        if self.is_simulation_mode:
+            return self._sim_cache[key]
         if self._cache.get(key) is None:
             self.invalidate_and_prime_cache()
         return self._cache[key]
 
-    # --- PRESERVED: SYSTEM RESET CONTROL ENGINE FUNCTIONS ---
-    def mount_nuke_control(self):
-        nuke_frame = ctk.CTkFrame(self.tab4, fg_color="#2b2b2b", border_color="#8B0000", border_width=1)
-        nuke_frame.pack(fill="x", padx=20, pady=20, side="bottom")
-        
-        ctk.CTkLabel(
-            nuke_frame, 
-            text="⚠️ SYSTEM RESET CONTROL ENGINE", 
-            font=ctk.CTkFont(weight="bold", size=13), 
-            text_color="#ff6b6b"
-        ).pack(anchor="w", padx=15, pady=8)
-        
-        ctk.CTkLabel(
-            nuke_frame, 
-            text="Clicking this button will completely nuke the active database binary tables and hot-reload blank production schemas.\nAll testing portfolios, spreadsheet states, and invoice lines will be cleared instantly.",
-            font=ctk.CTkFont(size=11),
-            text_color="gray",
-            justify="left"
-        ).pack(anchor="w", padx=15, pady=2)
-        
-        self.nuke_btn = ctk.CTkButton(
-            nuke_frame, 
-            text="Nuke & Reset Local Engine", 
-            fg_color="#8B0000", 
-            hover_color="#550000",
-            width=200,
-            command=self.trigger_system_nuke
-        )
-        self.nuke_btn.pack(anchor="w", padx=15, pady=15)
-
-    def trigger_system_nuke(self):
-        import database
-        from tkinter import messagebox
-        
-        confirm = messagebox.askyesno("Confirm Core Reset", "Are you absolutely sure you want to nuke the database?\nThis action will delete all portfolio lines permanently.")
-        if not confirm:
-            return
+    def toggle_simulation_mode(self):
+        if not self.is_simulation_mode:
+            self.is_simulation_mode = True
+            self._sim_cache["ledger"] = self._cache["ledger"].copy()
+            self._sim_cache["invoices"] = self._cache["invoices"].copy()
             
-        try:
-            database.reset_and_reinitialize_database()
+            self.sim_bar.configure(border_color="#D2691E", fg_color="#2b1a10")
+            self.sim_status_lbl.configure(text="SIMULATION MODE (Changes temporary)", text_color="#ffb84d")
+            self.sim_btn.configure(text="Exit Simulation", fg_color="#8B0000", hover_color="#550000")
+            self.profile_menu.configure(state="disabled")
+        else:
+            self.is_simulation_mode = False
+            self._sim_cache["ledger"] = None
+            self._sim_cache["invoices"] = None
             
-            self.current_profile_id = 1
-            profiles = self.get_profile_names()
-            self.profile_menu.configure(values=profiles)
-            self.profile_menu.set(profiles[0])
-            self.tab4.delete_menu.configure(values=profiles)
-            self.tab4.delete_menu.set(profiles[0])
-            
-            self.sync_accounts()
-            self.tab1.acct1_menu.configure(values=self.account_options)
-            self.tab1.acct1_menu.set(self.account_options[0] if self.account_options else "")
-            self.tab1.acct2_menu.configure(values=self.account_options)
-            self.tab1.acct2_menu.set(self.account_options[0] if self.account_options else "")
-
-            # Clear cache entirely so nuke values drop instantly from RAM memory
+            self.sim_bar.configure(border_color="#3a3a3a", fg_color="#1e1e1e")
+            self.sim_status_lbl.configure(text="LIVE MODE (Saving to Database)", text_color="#40ff40")
+            self.sim_btn.configure(text="Enter Simulation Mode", fg_color="#D2691E", hover_color="#A0522D")
+            self.profile_menu.configure(state="normal")
             self.invalidate_and_prime_cache()
 
-            self.tab2.load_grid_from_db()  
-            self.tab5.reload_ledger()      
-            self.tab6.load_invoices()      
-            self.refresh_reports()         
-            
-            messagebox.showinfo("Reset Complete", "B.O.Y.O.U.N.G. Engine database hot-reloaded successfully!")
-        except Exception as e:
-            messagebox.showerror("Reset Failure", f"An error occurred during teardown: {e}")
+        self.tab2.load_grid_from_db()
+        self.tab5.reload_ledger()
+        self.tab6.load_invoices()
+        self.refresh_reports()
 
-    # --- SHARED SYSTEM DATA CORE UTILITIES ---
     def get_profile_names(self):
         conn = sqlite3.connect(DATABASE_NAME)
         df = pd.read_sql_query("SELECT name FROM business_profiles", conn)
@@ -201,9 +153,7 @@ class ModernAccountingApp(ctk.CTk):
         self.tab1.acct2_menu.configure(values=self.account_options)
         self.tab1.acct2_menu.set(self.account_options[0] if self.account_options else "")
         
-        # Force memory cache to drop and pre-fetch the newly selected profile data instantly
         self.invalidate_and_prime_cache()
-        
         self.tab2.load_grid_from_db()
         self.tab5.reload_ledger()
         self.tab6.load_invoices()
@@ -216,23 +166,61 @@ class ModernAccountingApp(ctk.CTk):
             a2 = self.account_map[self.tab1.acct2_menu.get()]
             payload = [{"account_id": a1, "amount": val}, {"account_id": a2, "amount": -val}]
             
-            engine.post_journal_transaction(self.current_profile_id, "2026-06-27", self.tab1.desc_entry.get(), payload)
-            self.tab1.status_label.configure(text="🟢 Entry Posted Successfully!", text_color="green")
+            if self.is_simulation_mode:
+                simulated_row = pd.DataFrame([{
+                    "record_date": "2026-06-27", 
+                    "description": f"[SIM] {self.tab1.desc_entry.get()}", 
+                    "account_name": self.tab1.acct1_menu.get(), 
+                    "amount": val
+                }])
+                self._sim_cache["ledger"] = pd.concat([simulated_row, self._sim_cache["ledger"]], ignore_index=True)
+                self.tab1.status_label.configure(text="Simulated entry updated in memory", text_color="#ffb84d")
+            else:
+                engine.post_journal_transaction(self.current_profile_id, "2026-06-27", self.tab1.desc_entry.get(), payload)
+                self.tab1.status_label.configure(text="Transaction posted successfully", text_color="green")
+                self.invalidate_and_prime_cache()
+                
             self.tab1.amount_entry.delete(0, 'end')
             self.tab1.desc_entry.delete(0, 'end')
-            
-            # HOT REFRESH SPEED TRICK: Wipe cache memory records so the UI forces a hot refresh
-            self.invalidate_and_prime_cache()
-            
             self.tab5.reload_ledger()
             self.refresh_reports()
         except Exception as e:
             self.tab1.status_label.configure(text=f"Error: {e}", text_color="red")
 
     def refresh_reports(self):
-        data = engine.generate_report_string(self.current_profile_id, self.profile_menu.get())
-        self.tab3.bi_box.delete("1.0", "end")
-        self.tab3.bi_box.insert("1.0", data)
+        if self.is_simulation_mode:
+            self.tab3.bi_box.delete("1.0", "end")
+            self.tab3.bi_box.insert("1.0", "Reports are unavailable in simulation mode.\n\nPlease use the Transaction Ledger or Invoice Tracker to preview pending entries safely.")
+        else:
+            data = engine.generate_report_string(self.current_profile_id, self.profile_menu.get())
+            self.tab3.bi_box.delete("1.0", "end")
+            self.tab3.bi_box.insert("1.0", data)
+
+    def mount_reset_control(self):
+        reset_frame = ctk.CTkFrame(self.tab4, fg_color="#2b2b2b", border_color="#8B0000", border_width=1)
+        reset_frame.pack(fill="x", padx=20, pady=20, side="bottom")
+        ctk.CTkLabel(reset_frame, text="System Reset Settings", font=ctk.CTkFont(weight="bold", size=13), text_color="#ff6b6b").pack(anchor="w", padx=15, pady=8)
+        self.reset_btn = ctk.CTkButton(reset_frame, text="Reset Local Database", fg_color="#8B0000", hover_color="#550000", width=200, command=self.trigger_system_reset)
+        self.reset_btn.pack(anchor="w", padx=15, pady=15)
+
+    def trigger_system_reset(self):
+        import database
+        from tkinter import messagebox
+        if not messagebox.askyesno("Confirm Reset", "Are you sure you want to reset the local database? This action cannot be undone."): return
+        try:
+            database.reset_and_reinitialize_database()
+            self.current_profile_id = 1
+            profiles = self.get_profile_names()
+            self.profile_menu.configure(values=profiles)
+            self.profile_menu.set(profiles[0])
+            self.sync_accounts()
+            self.invalidate_and_prime_cache()
+            self.tab2.load_grid_from_db()  
+            self.tab5.reload_ledger()      
+            self.tab6.load_invoices()      
+            self.refresh_reports()         
+            messagebox.showinfo("Success", "Database successfully reinitialized.")
+        except Exception as e: messagebox.showerror("Error", f"Reset failed: {e}")
 
     def add_profile(self):
         name = self.tab4.new_profile_entry.get().strip()
@@ -242,51 +230,28 @@ class ModernAccountingApp(ctk.CTk):
         try:
             cursor.execute("INSERT INTO business_profiles (name) VALUES (?)", (name,))
             pid = cursor.lastrowid
-            
-            accounts = [
-                (pid, '1000', 'Cash / Bank', 'Asset'),
-                (pid, '1200', 'Accounts Receivable', 'Asset'),
-                (pid, '2000', 'Payables', 'Liability'),
-                (pid, '3000', 'Owner Equity', 'Equity'),
-                (pid, '4000', 'Revenue', 'Revenue'),
-                (pid, '5000', 'Software Expenses', 'Expense'),
-                (pid, '5100', 'Rent Expense', 'Expense')
-            ]
+            accounts = [(pid, '1000', 'Cash / Bank', 'Asset'), (pid, '1200', 'Accounts Receivable', 'Asset'), (pid, '2000', 'Payables', 'Liability'), (pid, '3000', 'Owner Equity', 'Equity'), (pid, '4000', 'Revenue', 'Revenue'), (pid, '5000', 'Software Expenses', 'Expense'), (pid, '5100', 'Rent Expense', 'Expense')]
             cursor.executemany("INSERT INTO accounts (profile_id, account_number, name, type) VALUES (?,?,?,?)", accounts)
             conn.commit()
-            
-            profiles = self.get_profile_names()
-            self.profile_menu.configure(values=profiles)
-            self.tab4.delete_menu.configure(values=profiles)
+            self.profile_menu.configure(values=self.get_profile_names())
             self.tab4.new_profile_entry.delete(0, 'end')
-        except Exception as e:
-            print(e)
-        finally:
-            conn.close()
+        except Exception as e: print(e)
+        finally: conn.close()
 
     def delete_profile(self):
         target_name = self.tab4.delete_menu.get()
-        profiles = self.get_profile_names()
-        if len(profiles) <= 1: return
-            
+        if len(self.get_profile_names()) <= 1: return
         conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
         try:
             cursor.execute("DELETE FROM business_profiles WHERE name = ?", (target_name,))
             conn.commit()
-            
             if target_name == self.profile_menu.get():
-                remaining_profiles = self.get_profile_names()
-                self.switch_profile(remaining_profiles[0])
-                self.profile_menu.set(remaining_profiles[0])
-            
-            updated_profiles = self.get_profile_names()
-            self.profile_menu.configure(values=updated_profiles)
-            self.tab4.delete_menu.configure(values=updated_profiles)
-        except Exception as e:
-            print(e)
-        finally:
-            conn.close()
+                self.switch_profile(self.get_profile_names()[0])
+                self.profile_menu.set(self.get_profile_names()[0])
+            self.profile_menu.configure(values=self.get_profile_names())
+        except Exception as e: print(e)
+        finally: conn.close()
 
 if __name__ == "__main__":
     app = ModernAccountingApp()
