@@ -1,107 +1,53 @@
 import sqlite3
+import pandas as pd
+from database import DATABASE_NAME
 
-DATABASE_NAME = "accounting.db"
-
-def initialize_database():
+def post_journal_transaction(profile_id, date_str, description, ledger_payload):
     conn = sqlite3.connect(DATABASE_NAME)
     cursor = conn.cursor()
     
-    cursor.execute("PRAGMA foreign_keys = ON;")
-    
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS business_profiles (
-            profile_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE NOT NULL
-        )
-    """)
-    
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS accounts (
-            account_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            profile_id INTEGER,
-            account_number TEXT NOT NULL,
-            name TEXT NOT NULL,
-            type TEXT NOT NULL,
-            FOREIGN KEY(profile_id) REFERENCES business_profiles(profile_id) ON DELETE CASCADE
-        )
-    """)
-    
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS grid_items (
-            item_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            profile_id INTEGER,
-            row_index INTEGER NOT NULL,
-            description TEXT,
-            quantity REAL DEFAULT 0.0,
-            rate REAL DEFAULT 0.0,
-            FOREIGN KEY(profile_id) REFERENCES business_profiles(profile_id) ON DELETE CASCADE
-        )
-    """)
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS journal_entries (
-            journal_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            profile_id INTEGER,
-            date TEXT NOT NULL,
-            description TEXT,
-            FOREIGN KEY(profile_id) REFERENCES business_profiles(profile_id) ON DELETE CASCADE
-        )
-    """)
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS ledger_entries (
-            entry_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            journal_id INTEGER,
-            account_id INTEGER,
-            amount REAL NOT NULL,
-            FOREIGN KEY(journal_id) REFERENCES journal_entries(journal_id) ON DELETE CASCADE,
-            FOREIGN KEY(account_id) REFERENCES accounts(account_id) ON DELETE CASCADE
-        )
-    """)
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS invoices (
-            invoice_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            profile_id INTEGER,
-            customer_name TEXT NOT NULL,
-            amount REAL NOT NULL,
-            due_date TEXT NOT NULL,
-            status TEXT DEFAULT 'Unpaid',
-            FOREIGN KEY(profile_id) REFERENCES business_profiles(profile_id) ON DELETE CASCADE
-        )
-    """)
-    
-    cursor.execute("SELECT COUNT(*) FROM business_profiles")
-    if cursor.fetchone()[0] == 0:
-        cursor.execute("INSERT INTO business_profiles (name) VALUES ('Default Corporation')")
-        pid = cursor.lastrowid
-        accounts = [
-            (pid, '1000', 'Cash / Bank', 'Asset'),
-            (pid, '1200', 'Accounts Receivable', 'Asset'),
-            (pid, '2000', 'Payables', 'Liability'),
-            (pid, '3000', 'Owner Equity', 'Equity'),
-            (pid, '4000', 'Revenue', 'Revenue'),
-            (pid, '5000', 'Software Expenses', 'Expense'),
-            (pid, '5100', 'Rent Expense', 'Expense')
-        ]
-        cursor.executemany("INSERT INTO accounts (profile_id, account_number, name, type) VALUES (?,?,?,?)", accounts)
+    try:
+        cursor.execute("""
+            INSERT INTO journal_entries (profile_id, date, description)
+            VALUES (?, ?, ?)
+        """, (profile_id, date_str, description))
         
-    conn.commit()
-    conn.close()
+        journal_id = cursor.lastrowid
+        
+        for line in ledger_payload:
+            cursor.execute("""
+                INSERT INTO ledger_entries (journal_id, account_id, amount)
+                VALUES (?, ?, ?)
+            """, (journal_id, line["account_id"], line["amount"]))
+            
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
 
-def reset_and_reinitialize_database():
+
+def generate_report_string(profile_id, profile_name):
     conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
     
-    cursor.execute("PRAGMA foreign_keys = OFF;")
+    query = """
+        SELECT accounts.type, accounts.name, COALESCE(SUM(ledger_entries.amount), 0) as balance
+        FROM accounts
+        LEFT JOIN ledger_entries ON accounts.account_id = ledger_entries.account_id
+        WHERE accounts.profile_id = ?
+        GROUP BY accounts.type, accounts.name
+    """
     
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
-    tables = [row[0] for row in cursor.fetchall()]
-    
-    for table in tables:
-        cursor.execute(f"DROP TABLE IF EXISTS {table};")
+    try:
+        df = pd.read_sql_query(query, conn, params=(profile_id,))
         
-    conn.commit()
-    conn.close()
-    
-    initialize_database()
+        output = f"Financial Health: {profile_name}\n\n"
+        for _, row in df.iterrows():
+            output += f"[{row['type']}] {row['name']}: ${row['balance']:,.2f}\n"
+            
+        conn.close()
+        return output
+    except Exception as e:
+        conn.close()
+        return f"Report generation failed: {e}"
