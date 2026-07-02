@@ -8,8 +8,6 @@ A double-entry financial accounting platform built completely in Python using a 
 * **Invoice Pagination Pipeline:** A 10-row viewport context tracking invoice pipelines ("Paid"/"Unpaid").
 * **RAM Memory Cache Store:** Prevents repetitive disk reading queries to run efficiently on low-resource environments.
 
-"Known Bugs: shadow simulation sheets and invoice does not delete the inputted date when simulation is clicked"
-
 Installation
 1. Python Requirement
 Ensure you have **Python 3.8 to 3.11** installed on your system.
