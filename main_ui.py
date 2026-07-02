@@ -122,7 +122,7 @@ class ModernAccountingApp(ctk.CTk):
             self.profile_menu.configure(state="normal")
             self.invalidate_and_prime_cache()
 
-        self.tab2.load_grid_from_db()
+        
         self.tab5.reload_ledger()
         self.tab6.load_invoices()
         self.refresh_reports()
