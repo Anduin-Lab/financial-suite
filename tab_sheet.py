@@ -88,10 +88,6 @@ class InteractiveSheetTab(ctk.CTkFrame):
         self.grand_total_lbl.configure(text=f"Grand Aggregate Value: ${grand_total:,.2f}")
 
     def save_grid_to_db(self):
-        if self.master_app.is_simulation_mode:
-            print("Spreadsheet saving skipped while in simulation mode.")
-            return
-
         pid = self.master_app.current_profile_id
         conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
