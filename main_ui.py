@@ -23,9 +23,7 @@ class ModernAccountingApp(ctk.CTk):
         self.geometry("950x740")
         self.current_profile_id = 1
         
-        self.is_simulation_mode = False
         self._cache = {"ledger": None, "invoices": None}
-        self._sim_cache = {"ledger": None, "invoices": None}
         
         self.top_bar = ctk.CTkFrame(self, fg_color="transparent")
         self.top_bar.pack(pady=(10, 5), padx=20, fill="x")
@@ -33,15 +31,6 @@ class ModernAccountingApp(ctk.CTk):
         ctk.CTkLabel(self.top_bar, text="Company Profile:", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=5)
         self.profile_menu = ctk.CTkOptionMenu(self.top_bar, values=self.get_profile_names(), command=self.switch_profile, width=180)
         self.profile_menu.pack(side="left", padx=10)
-        
-        self.sim_bar = ctk.CTkFrame(self, fg_color="#1e1e1e", border_color="#3a3a3a", border_width=1, height=45)
-        self.sim_bar.pack(pady=5, padx=20, fill="x")
-        
-        self.sim_status_lbl = ctk.CTkLabel(self.sim_bar, text="LIVE MODE (Saving to Database)", font=ctk.CTkFont(weight="bold", size=12), text_color="#40ff40")
-        self.sim_status_lbl.pack(side="left", padx=15, pady=8)
-        
-        self.sim_btn = ctk.CTkButton(self.sim_bar, text="Enter Simulation Mode", fg_color="#D2691E", hover_color="#A0522D", width=200, command=self.toggle_simulation_mode)
-        self.sim_btn.pack(side="right", padx=15, pady=8)
         
         self.sync_accounts()
         self.invalidate_and_prime_cache()
@@ -95,37 +84,9 @@ class ModernAccountingApp(ctk.CTk):
             conn.close()
 
     def get_cached_data(self, key):
-        if self.is_simulation_mode:
-            return self._sim_cache[key]
         if self._cache.get(key) is None:
             self.invalidate_and_prime_cache()
         return self._cache[key]
-
-    def toggle_simulation_mode(self):
-        if not self.is_simulation_mode:
-            self.is_simulation_mode = True
-            self._sim_cache["ledger"] = self._cache["ledger"].copy()
-            self._sim_cache["invoices"] = self._cache["invoices"].copy()
-            
-            self.sim_bar.configure(border_color="#D2691E", fg_color="#2b1a10")
-            self.sim_status_lbl.configure(text="SIMULATION MODE (Changes temporary)", text_color="#ffb84d")
-            self.sim_btn.configure(text="Exit Simulation", fg_color="#8B0000", hover_color="#550000")
-            self.profile_menu.configure(state="disabled")
-        else:
-            self.is_simulation_mode = False
-            self._sim_cache["ledger"] = None
-            self._sim_cache["invoices"] = None
-            
-            self.sim_bar.configure(border_color="#3a3a3a", fg_color="#1e1e1e")
-            self.sim_status_lbl.configure(text="LIVE MODE (Saving to Database)", text_color="#40ff40")
-            self.sim_btn.configure(text="Enter Simulation Mode", fg_color="#D2691E", hover_color="#A0522D")
-            self.profile_menu.configure(state="normal")
-            self.invalidate_and_prime_cache()
-
-        
-        self.tab5.reload_ledger()
-        self.tab6.load_invoices()
-        self.refresh_reports()
 
     def get_profile_names(self):
         conn = sqlite3.connect(DATABASE_NAME)
@@ -166,19 +127,9 @@ class ModernAccountingApp(ctk.CTk):
             a2 = self.account_map[self.tab1.acct2_menu.get()]
             payload = [{"account_id": a1, "amount": val}, {"account_id": a2, "amount": -val}]
             
-            if self.is_simulation_mode:
-                simulated_row = pd.DataFrame([{
-                    "record_date": "2026-06-27", 
-                    "description": f"[SIM] {self.tab1.desc_entry.get()}", 
-                    "account_name": self.tab1.acct1_menu.get(), 
-                    "amount": val
-                }])
-                self._sim_cache["ledger"] = pd.concat([simulated_row, self._sim_cache["ledger"]], ignore_index=True)
-                self.tab1.status_label.configure(text="Simulated entry updated in memory", text_color="#ffb84d")
-            else:
-                engine.post_journal_transaction(self.current_profile_id, "2026-06-27", self.tab1.desc_entry.get(), payload)
-                self.tab1.status_label.configure(text="Transaction posted successfully", text_color="green")
-                self.invalidate_and_prime_cache()
+            engine.post_journal_transaction(self.current_profile_id, "2026-06-27", self.tab1.desc_entry.get(), payload)
+            self.tab1.status_label.configure(text="Transaction posted successfully", text_color="green")
+            self.invalidate_and_prime_cache()
                 
             self.tab1.amount_entry.delete(0, 'end')
             self.tab1.desc_entry.delete(0, 'end')
@@ -188,13 +139,9 @@ class ModernAccountingApp(ctk.CTk):
             self.tab1.status_label.configure(text=f"Error: {e}", text_color="red")
 
     def refresh_reports(self):
-        if self.is_simulation_mode:
-            self.tab3.bi_box.delete("1.0", "end")
-            self.tab3.bi_box.insert("1.0", "Reports are unavailable in simulation mode.\n\nPlease use the Transaction Ledger or Invoice Tracker to preview pending entries safely.")
-        else:
-            data = engine.generate_report_string(self.current_profile_id, self.profile_menu.get())
-            self.tab3.bi_box.delete("1.0", "end")
-            self.tab3.bi_box.insert("1.0", data)
+        data = engine.generate_report_string(self.current_profile_id, self.profile_menu.get())
+        self.tab3.bi_box.delete("1.0", "end")
+        self.tab3.bi_box.insert("1.0", data)
 
     def mount_reset_control(self):
         reset_frame = ctk.CTkFrame(self.tab4, fg_color="#2b2b2b", border_color="#8B0000", border_width=1)
