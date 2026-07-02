@@ -10,6 +10,7 @@ from tab_reports import ReportsDashboardTab
 from tab_settings import SystemSettingsTab
 from tab_ledger import GeneralLedgerTab
 from tab_invoices import InvoiceTrackerTab
+from tab_reconciliation import BankReconciliationTab
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -55,6 +56,9 @@ class ModernAccountingApp(ctk.CTk):
 
         self.tab6 = InvoiceTrackerTab(self.tabs.add("Track Invoices"), self)
         self.tab6.pack(fill="both", expand=True)
+
+        self.tab7 = BankReconciliationTab(self.tabs.add("Reconcile Accounts"), self)
+        self.tab7.pack(fill="both", expand=True)
 
         self.mount_reset_control()
         self.refresh_reports()
