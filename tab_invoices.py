@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import date, datetime
 from database import DATABASE_NAME
 
+
 class InvoiceTrackerTab(ctk.CTkFrame):
     def __init__(self, master, master_app):
         super().__init__(master, fg_color="transparent")
