@@ -11,6 +11,7 @@ from tab_settings import SystemSettingsTab
 from tab_ledger import GeneralLedgerTab
 from tab_invoices import InvoiceTrackerTab
 from tab_reconciliation import BankReconciliationTab
+from audit_engine import AuditEngine
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -19,6 +20,7 @@ class ModernAccountingApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         initialize_database()
+        self.patch_legacy_database_columns()
         
         self.title("Financial Suite")
         self.geometry("950x740")
@@ -35,15 +37,21 @@ class ModernAccountingApp(ctk.CTk):
         
         self.sync_accounts()
         self.invalidate_and_prime_cache()
+
+        self.footer_bar = ctk.CTkFrame(self, height=30, fg_color="#1a1a1a", corner_radius=0)
+        self.footer_bar.pack(fill="x", side="bottom", ipady=2)
         
-        self.tabs = ctk.CTkTabview(self)
-        self.tabs.pack(padx=20, pady=5, fill="both", expand=True)
+        self.error_icon_lbl = ctk.CTkLabel(
+            self.footer_bar, 
+            text="✅ No errors", 
+            font=ctk.CTkFont(weight="bold", size=12),
+            text_color="#40ff40", 
+            cursor="hand2"
+        )
+        self.error_icon_lbl.pack(side="left", padx=20)
+        self.error_icon_lbl.bind("<Button-1>", lambda e: self.show_audit_console_popup())
         
-        self.tabs = ctk.CTkTabview(self)
-        self.tabs.pack(padx=20, pady=5, fill="both", expand=True)
-        
-        self.tabs = ctk.CTkTabview(self)
-        self.tabs.pack(padx=20, pady=5, fill="both", expand=True)
+        self.detected_errors = []
         
         self.tabs = ctk.CTkTabview(self)
         self.tabs.pack(padx=20, pady=5, fill="both", expand=True)
@@ -54,45 +62,48 @@ class ModernAccountingApp(ctk.CTk):
         self.tab2 = InteractiveSheetTab(self.tabs.add("Interactive Sheet"), self)
         self.tab2.pack(fill="both", expand=True)
         
-        self.tab3 = InvoiceTrackerTab(self.tabs.add("Track Invoices"), self)
+        self.tab3 = ReportsDashboardTab(self.tabs.add("View Dashboard"), self)
         self.tab3.pack(fill="both", expand=True)
-
-        self.tab4 = BankReconciliationTab(self.tabs.add("Reconcile Accounts"), self)
+        
+        self.tab4 = SystemSettingsTab(self.tabs.add("Manage System"), self)
         self.tab4.pack(fill="both", expand=True)
 
         self.tab5 = GeneralLedgerTab(self.tabs.add("View Ledger"), self)
         self.tab5.pack(fill="both", expand=True)
 
-        self.tab6 = ReportsDashboardTab(self.tabs.add("View Dashboard"), self)
+        self.tab6 = InvoiceTrackerTab(self.tabs.add("Track Invoices"), self)
         self.tab6.pack(fill="both", expand=True)
-        
-        self.tab7 = SystemSettingsTab(self.tabs.add("Manage System"), self)
+
+        self.tab7 = BankReconciliationTab(self.tabs.add("Reconcile Accounts"), self)
         self.tab7.pack(fill="both", expand=True)
 
         self.mount_reset_control()
         self.refresh_reports()
+        
+        self.refresh_system_health_status()
 
-    def invalidate_and_prime_cache(self):
+    def patch_legacy_database_columns(self):
         conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
         try:
-            cursor.execute("PRAGMA table_info(journal_entries);")
+            cursor.execute("PRAGMA table_info(ledger_entries)")
             columns = [col[1] for col in cursor.fetchall()]
-            date_col = "date" if "date" in columns else ("transaction_date" if "transaction_date" in columns else columns[2])
-            
-            ledger_query = f"""
-                SELECT j.{date_col} as record_date, j.description, a.name as account_name, le.amount
-                FROM journal_entries j
-                JOIN ledger_entries le ON j.journal_id = le.journal_id
-                JOIN accounts a ON le.account_id = a.account_id
-                WHERE j.profile_id = ?
-                ORDER BY j.journal_id DESC, le.amount DESC
-            """
-            self._cache["ledger"] = pd.read_sql_query(ledger_query, conn, params=(self.current_profile_id,))
-            invoice_query = "SELECT invoice_id, customer_name, amount, due_date, status FROM invoices WHERE profile_id = ?"
-            self._cache["invoices"] = pd.read_sql_query(invoice_query, conn, params=(self.current_profile_id,))
+            if "profile_id" not in columns:
+                cursor.execute("ALTER TABLE ledger_entries ADD COLUMN profile_id INTEGER DEFAULT 1")
+                conn.commit()
         except Exception as e:
-            print(f"Cache Error: {e}")
+            print(f"Database patch info: {e}")
+        finally:
+            conn.close()
+
+    def invalidate_and_prime_cache(self):
+        conn = sqlite3.connect(DATABASE_NAME)
+        try:
+            self._cache["ledger"] = pd.read_sql_query("SELECT * FROM ledger_entries WHERE profile_id = ?", conn, params=(self.current_profile_id,))
+            self._cache["invoices"] = pd.read_sql_query("SELECT * FROM invoices WHERE profile_id = ?", conn, params=(self.current_profile_id,))
+        except Exception as e:
+            self._cache["ledger"] = pd.DataFrame()
+            self._cache["invoices"] = pd.DataFrame()
         finally:
             conn.close()
 
@@ -129,9 +140,10 @@ class ModernAccountingApp(ctk.CTk):
         
         self.invalidate_and_prime_cache()
         self.tab2.load_grid_from_db()
-        self.tab3.load_invoices()
         self.tab5.reload_ledger()
+        self.tab6.load_invoices()
         self.refresh_reports()
+        self.refresh_system_health_status()
 
     def execute_entry(self):
         try:
@@ -148,16 +160,17 @@ class ModernAccountingApp(ctk.CTk):
             self.tab1.desc_entry.delete(0, 'end')
             self.tab5.reload_ledger()
             self.refresh_reports()
+            self.refresh_system_health_status()
         except Exception as e:
             self.tab1.status_label.configure(text=f"Error: {e}", text_color="red")
 
     def refresh_reports(self):
         data = engine.generate_report_string(self.current_profile_id, self.profile_menu.get())
-        self.tab6.bi_box.delete("1.0", "end")
-        self.tab6.bi_box.insert("1.0", data)
+        self.tab3.bi_box.delete("1.0", "end")
+        self.tab3.bi_box.insert("1.0", data)
 
     def mount_reset_control(self):
-        reset_frame = ctk.CTkFrame(self.tab7, fg_color="#2b2b2b", border_color="#8B0000", border_width=1)
+        reset_frame = ctk.CTkFrame(self.tab4, fg_color="#2b2b2b", border_color="#8B0000", border_width=1)
         reset_frame.pack(fill="x", padx=20, pady=20, side="bottom")
         ctk.CTkLabel(reset_frame, text="System Reset Settings", font=ctk.CTkFont(weight="bold", size=13), text_color="#ff6b6b").pack(anchor="w", padx=15, pady=8)
         self.reset_btn = ctk.CTkButton(reset_frame, text="Reset Local Database", fg_color="#8B0000", hover_color="#550000", width=200, command=self.trigger_system_reset)
@@ -166,7 +179,7 @@ class ModernAccountingApp(ctk.CTk):
     def trigger_system_reset(self):
         import database
         from tkinter import messagebox
-        if not messagebox.askyesno("Confirm Reset", "Are you sure you want to reset the local database? This action cannot be undone."): return
+        if not messagebox.askyesno("Confirm Reset", "Are you sure you want to reset the database?"): return
         try:
             database.reset_and_reinitialize_database()
             self.current_profile_id = 1
@@ -176,14 +189,54 @@ class ModernAccountingApp(ctk.CTk):
             self.sync_accounts()
             self.invalidate_and_prime_cache()
             self.tab2.load_grid_from_db()  
-            self.tab3.load_invoices()      
             self.tab5.reload_ledger()      
+            self.tab6.load_invoices()      
             self.refresh_reports()         
-            messagebox.showinfo("Success", "Database successfully reinitialized.")
+            self.refresh_system_health_status()
+            messagebox.showinfo("Success", "Database reset complete.")
         except Exception as e: messagebox.showerror("Error", f"Reset failed: {e}")
 
+    def refresh_system_health_status(self):
+        """Updates the error counter box."""
+        self.detected_errors = AuditEngine.run_system_audit(self.current_profile_id)
+        err_count = len(self.detected_errors)
+        
+        if err_count > 0:
+            self.error_icon_lbl.configure(text=f"⚠️ Errors found: {err_count}", text_color="#ff6b6b")
+        else:
+            self.error_icon_lbl.configure(text="✅ No errors", text_color="#40ff40")
+
+    def show_audit_console_popup(self):
+        """Shows the simple list window of what is currently wrong."""
+        popup = ctk.CTkToplevel(self)
+        popup.title("Error Log List")
+        popup.geometry("550x380")
+        popup.attributes("-topmost", True)
+        
+        ctk.CTkLabel(popup, text="⚠️ Current Issues Found", font=ctk.CTkFont(weight="bold", size=14)).pack(pady=10)
+        
+        log_view = ctk.CTkFrame(popup, fg_color="transparent")
+        log_view.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        if not self.detected_errors:
+            ctk.CTkLabel(log_view, text="Everything looks great! No issues found.", text_color="green", font=ctk.CTkFont(size=12)).pack(pady=50)
+            return
+            
+        for err in self.detected_errors:
+            error_text = f"• [{err['type'].upper()}] in '{err['tab']}' tab:\n  {err['msg']}\n"
+            
+            lbl = ctk.CTkLabel(
+                log_view, 
+                text=error_text, 
+                font=ctk.CTkFont(size=12), 
+                text_color="#ff6b6b", 
+                justify="left", 
+                anchor="w",
+                wraplength=500
+            )
+            lbl.pack(fill="x", anchor="w", pady=5)
     def add_profile(self):
-        name = self.tab7.new_profile_entry.get().strip()
+        name = self.tab4.new_profile_entry.get().strip()
         if not name: return
         conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
@@ -194,7 +247,7 @@ class ModernAccountingApp(ctk.CTk):
             cursor.executemany("INSERT INTO accounts (profile_id, account_number, name, type) VALUES (?,?,?,?)", accounts)
             conn.commit()
             self.profile_menu.configure(values=self.get_profile_names())
-            self.tab7.new_profile_entry.delete(0, 'end')
+            self.tab4.new_profile_entry.delete(0, 'end')
         except Exception as e: print(e)
         finally: conn.close()
 

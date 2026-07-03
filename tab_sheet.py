@@ -13,7 +13,6 @@ class InteractiveSheetTab(ctk.CTkFrame):
         
         self.symbols = {"USD": "$", "EUR": "€", "GBP": "£", "PHP": "₱", "QAR": "QR"}
 
-        # --- Top Control Action Bar ---
         control_bar = ctk.CTkFrame(self, fg_color="transparent")
         control_bar.pack(fill="x", padx=20, pady=5)
         
@@ -22,12 +21,11 @@ class InteractiveSheetTab(ctk.CTkFrame):
         ctk.CTkButton(control_bar, text="Save Changes", fg_color="#1f538d", hover_color="#14375e", width=120, command=self.save_grid_to_db).pack(side="right", padx=5)
         ctk.CTkButton(control_bar, text="Recalculate Sheet", fg_color="#3a3a3a", hover_color="#2b2b2b", width=140, command=self.load_grid_from_db).pack(side="right", padx=5)
         
-        # Currency Dropdown Menu integration
         self.sheet_curr_menu = ctk.CTkOptionMenu(control_bar, values=["USD", "EUR", "GBP", "PHP", "QAR"], width=90, command=self.update_sheet_currency_labels)
         self.sheet_curr_menu.pack(side="right", padx=10)
         ctk.CTkLabel(control_bar, text="Sheet Currency:", font=ctk.CTkFont(size=12)).pack(side="right", padx=2)
 
-        # --- Spreadsheet Container Grid Workspace ---
+
         self.sheet_container = ctk.CTkScrollableFrame(self)
         self.sheet_container.pack(fill="both", expand=True, padx=20, pady=5)
 
@@ -40,7 +38,6 @@ class InteractiveSheetTab(ctk.CTkFrame):
             lbl.grid(row=0, column=col_idx, padx=5, pady=5, sticky="ew")
             self.header_labels.append(lbl)
 
-        # Build Interactive Grid
         for r in range(1, self.total_rows + 1):
             ctk.CTkLabel(self.sheet_container, text=str(r), width=50, anchor="center").grid(row=r, column=0, padx=5, pady=2)
             
@@ -66,7 +63,7 @@ class InteractiveSheetTab(ctk.CTkFrame):
                 "total": total_label
             }
 
-        # --- Bottom Aggregate Summary Strip ---
+
         self.summary_strip = ctk.CTkFrame(self, fg_color="#1e1e1e", height=35, corner_radius=6)
         self.summary_strip.pack(fill="x", side="bottom", pady=10, padx=20)
         
@@ -81,7 +78,6 @@ class InteractiveSheetTab(ctk.CTkFrame):
         self.header_labels[3].configure(text=f"Unit Rate ({sym})")
         self.header_labels[4].configure(text=f"Line Total ({sym})")
         
-        # Trigger clean recalculation across text values
         for r in range(1, self.total_rows + 1):
             self.compute_row_total(r)
         self.compute_grand_total()
@@ -179,4 +175,5 @@ class InteractiveSheetTab(ctk.CTkFrame):
         finally:
             conn.close()
             
+        self.master_app.refresh_system_health_status()
         self.compute_grand_total()
