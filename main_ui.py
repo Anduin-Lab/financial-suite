@@ -39,25 +39,34 @@ class ModernAccountingApp(ctk.CTk):
         self.tabs = ctk.CTkTabview(self)
         self.tabs.pack(padx=20, pady=5, fill="both", expand=True)
         
+        self.tabs = ctk.CTkTabview(self)
+        self.tabs.pack(padx=20, pady=5, fill="both", expand=True)
+        
+        self.tabs = ctk.CTkTabview(self)
+        self.tabs.pack(padx=20, pady=5, fill="both", expand=True)
+        
+        self.tabs = ctk.CTkTabview(self)
+        self.tabs.pack(padx=20, pady=5, fill="both", expand=True)
+        
         self.tab1 = LogTransactionTab(self.tabs.add("Log Transaction"), self)
         self.tab1.pack(fill="both", expand=True)
         
         self.tab2 = InteractiveSheetTab(self.tabs.add("Interactive Sheet"), self)
         self.tab2.pack(fill="both", expand=True)
         
-        self.tab3 = ReportsDashboardTab(self.tabs.add("View Dashboard"), self)
+        self.tab3 = InvoiceTrackerTab(self.tabs.add("Track Invoices"), self)
         self.tab3.pack(fill="both", expand=True)
-        
-        self.tab4 = SystemSettingsTab(self.tabs.add("Manage System"), self)
+
+        self.tab4 = BankReconciliationTab(self.tabs.add("Reconcile Accounts"), self)
         self.tab4.pack(fill="both", expand=True)
 
         self.tab5 = GeneralLedgerTab(self.tabs.add("View Ledger"), self)
         self.tab5.pack(fill="both", expand=True)
 
-        self.tab6 = InvoiceTrackerTab(self.tabs.add("Track Invoices"), self)
+        self.tab6 = ReportsDashboardTab(self.tabs.add("View Dashboard"), self)
         self.tab6.pack(fill="both", expand=True)
-
-        self.tab7 = BankReconciliationTab(self.tabs.add("Reconcile Accounts"), self)
+        
+        self.tab7 = SystemSettingsTab(self.tabs.add("Manage System"), self)
         self.tab7.pack(fill="both", expand=True)
 
         self.mount_reset_control()
@@ -120,8 +129,8 @@ class ModernAccountingApp(ctk.CTk):
         
         self.invalidate_and_prime_cache()
         self.tab2.load_grid_from_db()
+        self.tab3.load_invoices()
         self.tab5.reload_ledger()
-        self.tab6.load_invoices()
         self.refresh_reports()
 
     def execute_entry(self):
@@ -144,11 +153,11 @@ class ModernAccountingApp(ctk.CTk):
 
     def refresh_reports(self):
         data = engine.generate_report_string(self.current_profile_id, self.profile_menu.get())
-        self.tab3.bi_box.delete("1.0", "end")
-        self.tab3.bi_box.insert("1.0", data)
+        self.tab6.bi_box.delete("1.0", "end")
+        self.tab6.bi_box.insert("1.0", data)
 
     def mount_reset_control(self):
-        reset_frame = ctk.CTkFrame(self.tab4, fg_color="#2b2b2b", border_color="#8B0000", border_width=1)
+        reset_frame = ctk.CTkFrame(self.tab7, fg_color="#2b2b2b", border_color="#8B0000", border_width=1)
         reset_frame.pack(fill="x", padx=20, pady=20, side="bottom")
         ctk.CTkLabel(reset_frame, text="System Reset Settings", font=ctk.CTkFont(weight="bold", size=13), text_color="#ff6b6b").pack(anchor="w", padx=15, pady=8)
         self.reset_btn = ctk.CTkButton(reset_frame, text="Reset Local Database", fg_color="#8B0000", hover_color="#550000", width=200, command=self.trigger_system_reset)
@@ -167,14 +176,14 @@ class ModernAccountingApp(ctk.CTk):
             self.sync_accounts()
             self.invalidate_and_prime_cache()
             self.tab2.load_grid_from_db()  
+            self.tab3.load_invoices()      
             self.tab5.reload_ledger()      
-            self.tab6.load_invoices()      
             self.refresh_reports()         
             messagebox.showinfo("Success", "Database successfully reinitialized.")
         except Exception as e: messagebox.showerror("Error", f"Reset failed: {e}")
 
     def add_profile(self):
-        name = self.tab4.new_profile_entry.get().strip()
+        name = self.tab7.new_profile_entry.get().strip()
         if not name: return
         conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
@@ -185,7 +194,7 @@ class ModernAccountingApp(ctk.CTk):
             cursor.executemany("INSERT INTO accounts (profile_id, account_number, name, type) VALUES (?,?,?,?)", accounts)
             conn.commit()
             self.profile_menu.configure(values=self.get_profile_names())
-            self.tab4.new_profile_entry.delete(0, 'end')
+            self.tab7.new_profile_entry.delete(0, 'end')
         except Exception as e: print(e)
         finally: conn.close()
 
