@@ -10,24 +10,37 @@ class InteractiveSheetTab(ctk.CTkFrame):
         
         self.total_rows = 15
         self.widgets = {}  
+        
+        self.symbols = {"USD": "$", "EUR": "€", "GBP": "£", "PHP": "₱", "QAR": "QR"}
 
+        # --- Top Control Action Bar ---
         control_bar = ctk.CTkFrame(self, fg_color="transparent")
         control_bar.pack(fill="x", padx=20, pady=5)
         
         ctk.CTkLabel(control_bar, text="Ledger Spreadsheet Workspace", font=ctk.CTkFont(weight="bold", size=14)).pack(side="left")
+        
         ctk.CTkButton(control_bar, text="Save Changes", fg_color="#1f538d", hover_color="#14375e", width=120, command=self.save_grid_to_db).pack(side="right", padx=5)
         ctk.CTkButton(control_bar, text="Recalculate Sheet", fg_color="#3a3a3a", hover_color="#2b2b2b", width=140, command=self.load_grid_from_db).pack(side="right", padx=5)
+        
+        # Currency Dropdown Menu integration
+        self.sheet_curr_menu = ctk.CTkOptionMenu(control_bar, values=["USD", "EUR", "GBP", "PHP", "QAR"], width=90, command=self.update_sheet_currency_labels)
+        self.sheet_curr_menu.pack(side="right", padx=10)
+        ctk.CTkLabel(control_bar, text="Sheet Currency:", font=ctk.CTkFont(size=12)).pack(side="right", padx=2)
 
+        # --- Spreadsheet Container Grid Workspace ---
         self.sheet_container = ctk.CTkScrollableFrame(self)
         self.sheet_container.pack(fill="both", expand=True, padx=20, pady=5)
 
-        headers = ["Row", "Item / Expense Description", "Quantity", "Unit Rate ($)", "Line Total ($)"]
-        widths = [50, 320, 100, 120, 140]
+        self.headers_text = ["Row", "Item / Expense Description", "Quantity", "Unit Rate ($)", "Line Total ($)"]
+        self.widths = [50, 320, 100, 120, 140]
+        self.header_labels = []
         
-        for col_idx, text in enumerate(headers):
-            lbl = ctk.CTkLabel(self.sheet_container, text=text, font=ctk.CTkFont(weight="bold"), width=widths[col_idx], anchor="w" if col_idx < 4 else "e")
+        for col_idx, text in enumerate(self.headers_text):
+            lbl = ctk.CTkLabel(self.sheet_container, text=text, font=ctk.CTkFont(weight="bold"), width=self.widths[col_idx], anchor="w" if col_idx < 4 else "e")
             lbl.grid(row=0, column=col_idx, padx=5, pady=5, sticky="ew")
+            self.header_labels.append(lbl)
 
+        # Build Interactive Grid
         for r in range(1, self.total_rows + 1):
             ctk.CTkLabel(self.sheet_container, text=str(r), width=50, anchor="center").grid(row=r, column=0, padx=5, pady=2)
             
@@ -53,6 +66,7 @@ class InteractiveSheetTab(ctk.CTkFrame):
                 "total": total_label
             }
 
+        # --- Bottom Aggregate Summary Strip ---
         self.summary_strip = ctk.CTkFrame(self, fg_color="#1e1e1e", height=35, corner_radius=6)
         self.summary_strip.pack(fill="x", side="bottom", pady=10, padx=20)
         
@@ -61,7 +75,20 @@ class InteractiveSheetTab(ctk.CTkFrame):
 
         self.load_grid_from_db()
 
+    def update_sheet_currency_labels(self, selected_currency):
+        sym = self.symbols.get(selected_currency, "$")
+        # Update column headers text on the fly
+        self.header_labels[3].configure(text=f"Unit Rate ({sym})")
+        self.header_labels[4].configure(text=f"Line Total ({sym})")
+        
+        # Trigger clean recalculation across text values
+        for r in range(1, self.total_rows + 1):
+            self.compute_row_total(r)
+        self.compute_grand_total()
+
     def compute_row_total(self, r):
+        curr = self.sheet_curr_menu.get()
+        sym = self.symbols.get(curr, "$")
         try:
             qty_val = self.widgets[r]["qty"].get().strip()
             rate_val = self.widgets[r]["rate"].get().strip()
@@ -70,22 +97,26 @@ class InteractiveSheetTab(ctk.CTkFrame):
             rate = float(rate_val) if rate_val else 0.0
             
             line_total = qty * rate
-            self.widgets[r]["total"].configure(text=f"${line_total:,.2f}")
+            self.widgets[r]["total"].configure(text=f"{sym}{line_total:,.2f}")
         except ValueError:
-            self.widgets[r]["total"].configure(text="$0.00")
+            self.widgets[r]["total"].configure(text=f"{sym}0.00")
             
         self.compute_grand_total()
 
     def compute_grand_total(self):
+        curr = self.sheet_curr_menu.get()
+        sym = self.symbols.get(curr, "$")
         grand_total = 0.0
+        
         for r in range(1, self.total_rows + 1):
             txt = self.widgets[r]["total"].cget("text")
             try:
-                val = float(txt.replace("$", "").replace(",", ""))
+                # Strips out currency symbol variant markers and punctuation safely
+                val = float(txt.replace(sym, "").replace(",", ""))
                 grand_total += val
             except ValueError:
                 pass
-        self.grand_total_lbl.configure(text=f"Grand Aggregate Value: ${grand_total:,.2f}")
+        self.grand_total_lbl.configure(text=f"Grand Aggregate Value: {sym}{grand_total:,.2f}")
 
     def save_grid_to_db(self):
         pid = self.master_app.current_profile_id
@@ -116,6 +147,8 @@ class InteractiveSheetTab(ctk.CTkFrame):
 
     def load_grid_from_db(self):
         pid = self.master_app.current_profile_id
+        curr = self.sheet_curr_menu.get()
+        sym = self.symbols.get(curr, "$")
         
         for r in range(1, self.total_rows + 1):
             self.widgets[r]["desc"].delete(0, 'end')
@@ -127,7 +160,7 @@ class InteractiveSheetTab(ctk.CTkFrame):
             self.widgets[r]["rate"].delete(0, 'end')
             self.widgets[r]["rate"]._activate_placeholder()
             
-            self.widgets[r]["total"].configure(text="$0.00")
+            self.widgets[r]["total"].configure(text=f"{sym}0.00")
 
         conn = sqlite3.connect(DATABASE_NAME)
         try:
@@ -140,7 +173,7 @@ class InteractiveSheetTab(ctk.CTkFrame):
                     self.widgets[r]["rate"].insert(0, f"{row['rate']:.2f}")
                     
                     line_total = float(row['quantity'] or 0.0) * float(row['rate'] or 0.0)
-                    self.widgets[r]["total"].configure(text=f"${line_total:,.2f}")
+                    self.widgets[r]["total"].configure(text=f"{sym}{line_total:,.2f}")
         except Exception as e:
             print(f"Spreadsheet load error: {e}")
         finally:
