@@ -2,7 +2,6 @@ import customtkinter as ctk
 import sqlite3
 import pandas as pd
 from datetime import date, datetime
-import tkinter as tk 
 from database import DATABASE_NAME
 
 class InvoiceTrackerTab(ctk.CTkFrame):
@@ -12,6 +11,10 @@ class InvoiceTrackerTab(ctk.CTkFrame):
         
         self.current_page = 1
         self.items_per_page = 10  
+        
+        # Added QAR exchange conversion rate factor and currency layout symbol markers
+        self.rates = {"USD": 1.0, "EUR": 0.92, "GBP": 0.78, "PHP": 58.50, "QAR": 3.64}
+        self.symbols = {"USD": "$", "EUR": "€", "GBP": "£", "PHP": "₱", "QAR": "QR"}
 
         self.aging_strip = ctk.CTkFrame(self, fg_color="#1e1e1e", height=60, corner_radius=6)
         self.aging_strip.pack(fill="x", side="top", padx=10, pady=(5, 5))
@@ -27,8 +30,13 @@ class InvoiceTrackerTab(ctk.CTkFrame):
         self.cust_entry = ctk.CTkEntry(self.form_panel, placeholder_text="Customer / Client Name", width=220)
         self.cust_entry.pack(pady=6, padx=10)
 
-        self.amt_entry = ctk.CTkEntry(self.form_panel, placeholder_text="Invoice Amount ($)", width=220)
+        self.amt_entry = ctk.CTkEntry(self.form_panel, placeholder_text="Invoice Amount", width=220)
         self.amt_entry.pack(pady=6, padx=10)
+
+        ctk.CTkLabel(self.form_panel, text="Billing Currency:", font=ctk.CTkFont(size=12)).pack(anchor="w", padx=30, pady=(4,0))
+        # Updated values list to allow choosing QAR option selector
+        self.curr_menu = ctk.CTkOptionMenu(self.form_panel, values=["USD", "EUR", "GBP", "PHP", "QAR"], width=220)
+        self.curr_menu.pack(pady=6, padx=10)
 
         self.date_entry = ctk.CTkEntry(self.form_panel, placeholder_text="Due Date (YYYY-MM-DD)", width=220)
         self.date_entry.insert(0, date.today().strftime("%Y-%m-%d"))
@@ -54,26 +62,23 @@ class InvoiceTrackerTab(ctk.CTkFrame):
         pid = self.master_app.current_profile_id
         cust = self.cust_entry.get().strip()
         amt_raw = self.amt_entry.get().strip()
+        curr = self.curr_menu.get()
         due = self.date_entry.get().strip()
 
         if not cust or not amt_raw or not due:
-            self.status_lbl.configure(text="❌ All invoice fields required.", text_color="red")
+            self.status_lbl.configure(text="❌ All fields required.", text_color="red")
             return
 
         try:
             amt = float(amt_raw)
-            try:
-                datetime.strptime(due, "%Y-%m-%d")
-            except ValueError:
-                self.status_lbl.configure(text="❌ Use YYYY-MM-DD format.", text_color="red")
-                return
+            datetime.strptime(due, "%Y-%m-%d")
             
             conn = sqlite3.connect(DATABASE_NAME)
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO invoices (profile_id, customer_name, amount, due_date)
-                VALUES (?, ?, ?, ?)
-            """, (pid, cust, amt, due))
+                INSERT INTO invoices (profile_id, customer_name, amount, due_date, currency)
+                VALUES (?, ?, ?, ?, ?)
+            """, (pid, cust, amt, due, curr))
             conn.commit()
             conn.close()
             
@@ -84,7 +89,7 @@ class InvoiceTrackerTab(ctk.CTkFrame):
             self.amt_entry.delete(0, 'end')
             self.load_invoices()
         except ValueError:
-            self.status_lbl.configure(text="❌ Value must be numeric.", text_color="red")
+            self.status_lbl.configure(text="❌ Invalid numeric/date format.", text_color="red")
 
     def calculate_aging_metrics(self, df):
         today = date.today()
@@ -96,16 +101,20 @@ class InvoiceTrackerTab(ctk.CTkFrame):
             try:
                 due_dt = datetime.strptime(row['due_date'], "%Y-%m-%d").date()
                 days_overdue = (today - due_dt).days
-                amt = float(row['amount'])
+                
+                raw_amt = float(row['amount'])
+                row_curr = row.get('currency', 'USD')
+                rate_factor = self.rates.get(row_curr, 1.0)
+                amt_usd = raw_amt / rate_factor
                 
                 if days_overdue <= 0:
-                    buckets["Current"] += amt
+                    buckets["Current"] += amt_usd
                 elif days_overdue <= 30:
-                    buckets["1-30 Days"] += amt
+                    buckets["1-30 Days"] += amt_usd
                 elif days_overdue <= 60:
-                    buckets["31-60 Days"] += amt
+                    buckets["31-60 Days"] += amt_usd
                 else:
-                    buckets["61+ Days"] += amt
+                    buckets["61+ Days"] += amt_usd
             except Exception:
                 pass
         return buckets
@@ -115,7 +124,7 @@ class InvoiceTrackerTab(ctk.CTkFrame):
             widget.destroy()
 
         configs = [
-            ("Current", buckets["Current"], "#40ff40", 0),
+            ("Current (Base USD)", buckets["Current"], "#40ff40", 0),
             ("1-30 Days Overdue", buckets["1-30 Days"], "#ffcc00", 1),
             ("31-60 Days Overdue", buckets["31-60 Days"], "#ff9900", 2),
             ("61+ Days Overdue", buckets["61+ Days"], "#ff6b6b", 3)
@@ -124,20 +133,20 @@ class InvoiceTrackerTab(ctk.CTkFrame):
         for label_text, amount, color, col in configs:
             cell = ctk.CTkFrame(self.aging_strip, fg_color="transparent")
             cell.grid(row=0, column=col, sticky="nsew", padx=5)
-            
             ctk.CTkLabel(cell, text=label_text, font=ctk.CTkFont(size=11, weight="bold"), text_color="gray").pack(pady=(8, 0))
             ctk.CTkLabel(cell, text=f"${amount:,.2f}", font=ctk.CTkFont(family="Courier", size=14, weight="bold"), text_color=color).pack(pady=(2, 8))
 
-    def copy_reminder(self, customer, amount, due_date):
+    def copy_reminder(self, customer, amount, due_date, currency):
+        sym = self.symbols.get(currency, "$")
         msg = (
             f"Dear {customer},\n\n"
-            f"This is a friendly reminder that your invoice of ${float(amount):,.2f} "
+            f"This is a friendly reminder that your invoice of {sym}{float(amount):,.2f} {currency} "
             f"was due on {due_date}. Please submit payment at your earliest convenience.\n\n"
             f"Thank you for your business!"
         )
         self.clipboard_clear()
         self.clipboard_append(msg)
-        self.status_lbl.configure(text=f"📋 Copied reminder for {customer}!", text_color="#ffcc00")
+        self.status_lbl.configure(text=f"📋 Copied ({currency}) notice!", text_color="#ffcc00")
 
     def load_invoices(self):
         for widget in self.pipeline_container.winfo_children():
@@ -145,12 +154,15 @@ class InvoiceTrackerTab(ctk.CTkFrame):
         for widget in self.pagination_bar.winfo_children():
             widget.destroy()
 
-        df = self.master_app.get_cached_data("invoices")
-        
-        buckets = self.calculate_aging_metrics(df if df is not None else pd.DataFrame())
+        conn = sqlite3.connect(DATABASE_NAME)
+        pid = self.master_app.current_profile_id
+        df = pd.read_sql_query("SELECT invoice_id, customer_name, amount, due_date, status, currency FROM invoices WHERE profile_id = ?", conn, params=(pid,))
+        conn.close()
+
+        buckets = self.calculate_aging_metrics(df)
         self.render_aging_strip(buckets)
 
-        headers = ["ID", "Customer", "Amount", "Due Date", "Status", "Actions"]
+        headers = ["ID", "Customer", "Amount Billed", "Due Date", "Status", "Actions"]
         header_frame = ctk.CTkFrame(self.pipeline_container, fg_color="#2b2b2b", height=30)
         header_frame.pack(fill="x", padx=5, pady=2)
         
@@ -159,8 +171,8 @@ class InvoiceTrackerTab(ctk.CTkFrame):
             anchor_pos = "w" if col_idx in [1, 3] else ("e" if col_idx == 2 else "center")
             ctk.CTkLabel(header_frame, text=text, font=ctk.CTkFont(weight="bold"), width=w, anchor=anchor_pos).pack(side="left", padx=10)
 
-        if df is None or df.empty:
-            ctk.CTkLabel(self.pipeline_container, text="No invoices found for this profile.", text_color="gray").pack(pady=40)
+        if df.empty:
+            ctk.CTkLabel(self.pipeline_container, text="No invoices found for this profile portfolio.", text_color="gray").pack(pady=40)
             return
 
         total_records = len(df)
@@ -184,10 +196,12 @@ class InvoiceTrackerTab(ctk.CTkFrame):
             cust = str(row['customer_name'])
             amt = float(row['amount'])
             due_str = str(row['due_date'])
+            row_curr = row.get('currency', 'USD')
+            sym = self.symbols.get(row_curr, "$")
             
             ctk.CTkLabel(row_frame, text=f"#{inv_id}", width=50, text_color="gray").pack(side="left", padx=10)
             ctk.CTkLabel(row_frame, text=cust, width=120, anchor="w").pack(side="left", padx=10)
-            ctk.CTkLabel(row_frame, text=f"${amt:,.2f}", font=ctk.CTkFont(family="Courier"), width=90, anchor="e").pack(side="left", padx=10)
+            ctk.CTkLabel(row_frame, text=f"{sym}{amt:,.2f} {row_curr}", font=ctk.CTkFont(family="Courier"), width=90, anchor="e").pack(side="left", padx=10)
             ctk.CTkLabel(row_frame, text=due_str, width=90, anchor="w").pack(side="left", padx=10)
 
             if status == "Paid":
@@ -213,7 +227,7 @@ class InvoiceTrackerTab(ctk.CTkFrame):
 
             if status == "Unpaid":
                 ctk.CTkButton(act_frame, text="Paid", width=45, height=22, fg_color="#228B22", hover_color="#122416", command=lambda i=inv_id: self.mark_invoice_paid(i)).pack(side="left", padx=2)
-                ctk.CTkButton(act_frame, text="📋 Remind", width=60, height=22, fg_color="#3a3a3a", hover_color="#2b2b2b", command=lambda c=cust, a=amt, d=due_str: self.copy_reminder(c, a, d)).pack(side="left", padx=2)
+                ctk.CTkButton(act_frame, text="📋 Remind", width=60, height=22, fg_color="#3a3a3a", hover_color="#2b2b2b", command=lambda c=cust, a=amt, d=due_str, cr=row_curr: self.copy_reminder(c, a, d, cr)).pack(side="left", padx=2)
             
             ctk.CTkButton(act_frame, text="Delete", width=50, height=22, fg_color="#8B0000", hover_color="#550000", command=lambda i=inv_id: self.delete_invoice(i)).pack(side="left", padx=2)
 
@@ -236,8 +250,6 @@ class InvoiceTrackerTab(ctk.CTkFrame):
         cursor.execute("UPDATE invoices SET status = 'Paid' WHERE invoice_id = ?", (invoice_id,))
         conn.commit()
         conn.close()
-        
-        self.master_app.invalidate_and_prime_cache()
         self.load_invoices()
         self.master_app.refresh_reports()
 
@@ -247,7 +259,5 @@ class InvoiceTrackerTab(ctk.CTkFrame):
         cursor.execute("DELETE FROM invoices WHERE invoice_id = ?", (invoice_id,))
         conn.commit()
         conn.close()
-        
-        self.master_app.invalidate_and_prime_cache()
         self.load_invoices()
         self.master_app.refresh_reports()
