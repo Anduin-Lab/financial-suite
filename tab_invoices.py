@@ -12,7 +12,6 @@ class InvoiceTrackerTab(ctk.CTkFrame):
         self.current_page = 1
         self.items_per_page = 10  
         
-        # Added QAR exchange conversion rate factor and currency layout symbol markers
         self.rates = {"USD": 1.0, "EUR": 0.92, "GBP": 0.78, "PHP": 58.50, "QAR": 3.64}
         self.symbols = {"USD": "$", "EUR": "€", "GBP": "£", "PHP": "₱", "QAR": "QR"}
 
@@ -34,7 +33,6 @@ class InvoiceTrackerTab(ctk.CTkFrame):
         self.amt_entry.pack(pady=6, padx=10)
 
         ctk.CTkLabel(self.form_panel, text="Billing Currency:", font=ctk.CTkFont(size=12)).pack(anchor="w", padx=30, pady=(4,0))
-        # Updated values list to allow choosing QAR option selector
         self.curr_menu = ctk.CTkOptionMenu(self.form_panel, values=["USD", "EUR", "GBP", "PHP", "QAR"], width=220)
         self.curr_menu.pack(pady=6, padx=10)
 
@@ -88,6 +86,8 @@ class InvoiceTrackerTab(ctk.CTkFrame):
             self.cust_entry.delete(0, 'end')
             self.amt_entry.delete(0, 'end')
             self.load_invoices()
+            
+            self.master_app.refresh_system_health_status()
         except ValueError:
             self.status_lbl.configure(text="❌ Invalid numeric/date format.", text_color="red")
 
@@ -141,7 +141,7 @@ class InvoiceTrackerTab(ctk.CTkFrame):
         msg = (
             f"Dear {customer},\n\n"
             f"This is a friendly reminder that your invoice of {sym}{float(amount):,.2f} {currency} "
-            f"was due on {due_date}. Please submit payment at your earliest convenience.\n\n"
+            f"was due on {due_date}.\nPlease submit payment at your earliest convenience.\n\n"
             f"Thank you for your business!"
         )
         self.clipboard_clear()
@@ -252,6 +252,7 @@ class InvoiceTrackerTab(ctk.CTkFrame):
         conn.close()
         self.load_invoices()
         self.master_app.refresh_reports()
+        self.master_app.refresh_system_health_status()
 
     def delete_invoice(self, invoice_id):
         conn = sqlite3.connect(DATABASE_NAME)
@@ -261,3 +262,4 @@ class InvoiceTrackerTab(ctk.CTkFrame):
         conn.close()
         self.load_invoices()
         self.master_app.refresh_reports()
+        self.master_app.refresh_system_health_status()
