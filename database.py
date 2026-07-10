@@ -71,6 +71,11 @@ def initialize_database():
         )
     """)
     
+    try:
+        cursor.execute("ALTER TABLE invoices ADD COLUMN currency TEXT DEFAULT 'USD'")
+    except sqlite3.OperationalError:
+        pass
+    
     cursor.execute("SELECT COUNT(*) FROM business_profiles")
     if cursor.fetchone()[0] == 0:
         cursor.execute("INSERT INTO business_profiles (name) VALUES ('Default Corporation')")
@@ -92,16 +97,11 @@ def initialize_database():
 def reset_and_reinitialize_database():
     conn = sqlite3.connect(DATABASE_NAME)
     cursor = conn.cursor()
-    
     cursor.execute("PRAGMA foreign_keys = OFF;")
-    
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
     tables = [row[0] for row in cursor.fetchall()]
-    
     for table in tables:
         cursor.execute(f"DROP TABLE IF EXISTS {table};")
-        
     conn.commit()
     conn.close()
-    
     initialize_database()
