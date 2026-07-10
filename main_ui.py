@@ -21,6 +21,10 @@ class ModernAccountingApp(ctk.CTk):
         super().__init__()
         initialize_database()
         
+        # LOCAL-FIRST SPEED SUPREMACY: Open optimized persistent connection
+        self.db_conn = sqlite3.connect(DATABASE_NAME, check_same_thread=False)
+        self.init_performance_pragmas()
+        
         self.title("Financial Suite HUD — Mark VII")
         self.geometry("1020x780")
         self.configure(fg_color=designs.BG_WINDOW)
@@ -63,13 +67,8 @@ class ModernAccountingApp(ctk.CTk):
         
         self.detected_errors = []
         
-        self.tabs = ctk.CTkTabview(
-            self,
-            **designs.TABVIEW_STYLE
-        )
+        self.tabs = ctk.CTkTabview(self, **designs.TABVIEW_STYLE)
         self.tabs.pack(padx=20, pady=(5, 15), fill="both", expand=True)
-        
-
         self.tabs._segmented_button.configure(font=ctk.CTkFont(family=designs.FONT_HUD_REGULAR[0], size=designs.FONT_HUD_REGULAR[1], weight=designs.FONT_HUD_REGULAR[2]))
         
         self.tab1 = LogTransactionTab(self.tabs.add("Log Transaction"), self)
@@ -97,16 +96,19 @@ class ModernAccountingApp(ctk.CTk):
         self.refresh_reports()
         self.refresh_system_health_status()
 
+    def init_performance_pragmas(self):
+        cursor = self.db_conn.cursor()
+        cursor.execute("PRAGMA journal_mode = WAL;")
+        cursor.execute("PRAGMA synchronous = NORMAL;")
+        cursor.execute("PRAGMA cache_size = -64000;")
+
     def invalidate_and_prime_cache(self):
-        conn = sqlite3.connect(DATABASE_NAME)
         try:
-            self._cache["ledger"] = pd.read_sql_query("SELECT * FROM ledger_entries WHERE profile_id = ?", conn, params=(self.current_profile_id,))
-            self._cache["invoices"] = pd.read_sql_query("SELECT * FROM invoices WHERE profile_id = ?", conn, params=(self.current_profile_id,))
+            self._cache["ledger"] = pd.read_sql_query("SELECT * FROM ledger_entries WHERE profile_id = ?", self.db_conn, params=(self.current_profile_id,))
+            self._cache["invoices"] = pd.read_sql_query("SELECT * FROM invoices WHERE profile_id = ?", self.db_conn, params=(self.current_profile_id,))
         except Exception:
             self._cache["ledger"] = pd.DataFrame()
             self._cache["invoices"] = pd.DataFrame()
-        finally:
-            conn.close()
 
     def get_cached_data(self, key):
         if self._cache.get(key) is None:
@@ -114,24 +116,18 @@ class ModernAccountingApp(ctk.CTk):
         return self._cache[key]
 
     def get_profile_names(self):
-        conn = sqlite3.connect(DATABASE_NAME)
-        df = pd.read_sql_query("SELECT name FROM business_profiles", conn)
-        conn.close()
+        df = pd.read_sql_query("SELECT name FROM business_profiles", self.db_conn)
         return df['name'].tolist()
 
     def sync_accounts(self):
-        conn = sqlite3.connect(DATABASE_NAME)
-        df = pd.read_sql_query("SELECT account_id, name FROM accounts WHERE profile_id = ?", conn, params=(self.current_profile_id,))
-        conn.close()
+        df = pd.read_sql_query("SELECT account_id, name FROM accounts WHERE profile_id = ?", self.db_conn, params=(self.current_profile_id,))
         self.account_map = {row['name']: row['account_id'] for _, row in df.iterrows()}
         self.account_options = list(self.account_map.keys()) if self.account_map else ["No Accounts Found"]
 
     def switch_profile(self, selection):
-        conn = sqlite3.connect(DATABASE_NAME)
-        cursor = conn.cursor()
+        cursor = self.db_conn.cursor()
         cursor.execute("SELECT profile_id FROM business_profiles WHERE name = ?", (selection,))
         self.current_profile_id = cursor.fetchone()[0]
-        conn.close()
         
         self.sync_accounts()
         self.tab1.acct1_menu.configure(values=self.account_options)
@@ -182,7 +178,11 @@ class ModernAccountingApp(ctk.CTk):
         from tkinter import messagebox
         if not messagebox.askyesno("Confirm Reset", "Are you sure you want to reset the local database?"): return
         try:
+            self.db_conn.close()
             database.reset_and_reinitialize_database()
+            self.db_conn = sqlite3.connect(DATABASE_NAME, check_same_thread=False)
+            self.init_performance_pragmas()
+            
             self.current_profile_id = 1
             profiles = self.get_profile_names()
             self.profile_menu.configure(values=profiles)
@@ -230,33 +230,35 @@ class ModernAccountingApp(ctk.CTk):
     def add_profile(self):
         name = self.tab4.new_profile_entry.get().strip()
         if not name: return
-        conn = sqlite3.connect(DATABASE_NAME)
-        cursor = conn.cursor()
+        cursor = self.db_conn.cursor()
         try:
             cursor.execute("INSERT INTO business_profiles (name) VALUES (?)", (name,))
             pid = cursor.lastrowid
             accounts = [(pid, '1000', 'Cash / Bank', 'Asset'), (pid, '1200', 'Accounts Receivable', 'Asset'), (pid, '2000', 'Payables', 'Liability'), (pid, '3000', 'Owner Equity', 'Equity'), (pid, '4000', 'Revenue', 'Revenue'), (pid, '5000', 'Software Expenses', 'Expense'), (pid, '5100', 'Rent Expense', 'Expense')]
             cursor.executemany("INSERT INTO accounts (profile_id, account_number, name, type) VALUES (?,?,?,?)", accounts)
-            conn.commit()
+            self.db_conn.commit()
             self.profile_menu.configure(values=self.get_profile_names())
             self.tab4.new_profile_entry.delete(0, 'end')
         except Exception as e: print(e)
-        finally: conn.close()
 
     def delete_profile(self):
         target_name = self.tab4.delete_menu.get()
         if len(self.get_profile_names()) <= 1: return
-        conn = sqlite3.connect(DATABASE_NAME)
-        cursor = conn.cursor()
+        cursor = self.db_conn.cursor()
         try:
             cursor.execute("DELETE FROM business_profiles WHERE name = ?", (target_name,))
-            conn.commit()
+            self.db_conn.commit()
             if target_name == self.profile_menu.get():
                 self.switch_profile(self.get_profile_names()[0])
                 self.profile_menu.set(self.get_profile_names()[0])
             self.profile_menu.configure(values=self.get_profile_names())
         except Exception as e: print(e)
-        finally: conn.close()
+
+    def __del__(self):
+        try:
+            self.db_conn.close()
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     app = ModernAccountingApp()
