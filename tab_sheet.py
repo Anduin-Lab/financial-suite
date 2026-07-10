@@ -25,7 +25,6 @@ class InteractiveSheetTab(ctk.CTkFrame):
         self.sheet_curr_menu.pack(side="right", padx=10)
         ctk.CTkLabel(control_bar, text="Sheet Currency:", font=ctk.CTkFont(size=12)).pack(side="right", padx=2)
 
-
         self.sheet_container = ctk.CTkScrollableFrame(self)
         self.sheet_container.pack(fill="both", expand=True, padx=20, pady=5)
 
@@ -63,7 +62,6 @@ class InteractiveSheetTab(ctk.CTkFrame):
                 "total": total_label
             }
 
-
         self.summary_strip = ctk.CTkFrame(self, fg_color="#1e1e1e", height=35, corner_radius=6)
         self.summary_strip.pack(fill="x", side="bottom", pady=10, padx=20)
         
@@ -74,7 +72,6 @@ class InteractiveSheetTab(ctk.CTkFrame):
 
     def update_sheet_currency_labels(self, selected_currency):
         sym = self.symbols.get(selected_currency, "$")
-        # Update column headers text on the fly
         self.header_labels[3].configure(text=f"Unit Rate ({sym})")
         self.header_labels[4].configure(text=f"Line Total ({sym})")
         
@@ -107,7 +104,6 @@ class InteractiveSheetTab(ctk.CTkFrame):
         for r in range(1, self.total_rows + 1):
             txt = self.widgets[r]["total"].cget("text")
             try:
-                # Strips out currency symbol variant markers and punctuation safely
                 val = float(txt.replace(sym, "").replace(",", ""))
                 grand_total += val
             except ValueError:
@@ -140,6 +136,8 @@ class InteractiveSheetTab(ctk.CTkFrame):
             print(f"Spreadsheet persistence error: {e}")
         finally:
             conn.close()
+            
+        self.master_app.refresh_system_health_status()
 
     def load_grid_from_db(self):
         pid = self.master_app.current_profile_id
